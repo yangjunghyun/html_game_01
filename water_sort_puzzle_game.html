@@ -1,0 +1,1361 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Water Sort" />
+  <title>Water Sort Puzzle</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    /* ═══════════════════════════════════════
+       Design Tokens
+    ═══════════════════════════════════════ */
+    :root {
+      --bg: #0a0e1a;
+      --glass-bg: rgba(255,255,255,0.05);
+      --glass-border: rgba(255,255,255,0.14);
+      --glass-selected: rgba(99,102,241,0.8);
+      --text: #f1f5f9;
+      --text2: #94a3b8;
+      --accent: #6366f1;
+      --font: 'Outfit', system-ui, sans-serif;
+      --ease-bounce: cubic-bezier(.34,1.56,.64,1);
+      --ease-out: cubic-bezier(.4,0,.2,1);
+
+      /* ── iPhone 16 safe-area tokens ── */
+      --sat: env(safe-area-inset-top,    0px);
+      --sar: env(safe-area-inset-right,  0px);
+      --sab: env(safe-area-inset-bottom, 0px);
+      --sal: env(safe-area-inset-left,   0px);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* iPhone 16 screen: 393 × 852 logical px (19.5:9)
+       100dvh accounts for Dynamic Island + home indicator automatically
+       when viewport-fit=cover + apple-mobile-web-app-capable=yes       */
+    html {
+      height: 100%;
+      /* Prevent elastic over-scroll on Safari */
+      overscroll-behavior: none;
+    }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      /* 100dvh = Dynamic Island to home indicator bar */
+      height: 100dvh;
+      min-height: 100dvh;
+      overflow: hidden;
+      position: relative;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      touch-action: manipulation;
+      overscroll-behavior: none;
+      /* Respect safe areas on all four sides */
+      padding-top:    var(--sat);
+      padding-right:  var(--sar);
+      padding-bottom: var(--sab);
+      padding-left:   var(--sal);
+    }
+
+    /* Ambient blobs */
+    body::before, body::after {
+      content: '';
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(100px);
+      opacity: 0.26;
+      z-index: 0;
+      pointer-events: none;
+    }
+    body::before {
+      width: 400px; height: 400px;
+      background: radial-gradient(circle, #6366f1, transparent 70%);
+      top: -90px; left: -60px;
+      animation: blob 20s ease-in-out infinite alternate;
+    }
+    body::after {
+      width: 300px; height: 300px;
+      background: radial-gradient(circle, #a855f7, transparent 70%);
+      bottom: -60px; right: -40px;
+      animation: blob 24s ease-in-out infinite alternate-reverse;
+    }
+    @keyframes blob {
+      0%   { transform: translate(0,0) scale(1); }
+      50%  { transform: translate(40px,24px) scale(1.1); }
+      100% { transform: translate(-16px,12px) scale(0.96); }
+    }
+
+    /* ═══════════════════════════════════════
+       App shell — fills exactly the safe area
+    ═══════════════════════════════════════ */
+    #app {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+      max-width: 430px;          /* iPhone 16 Pro Max logical width cap */
+      /* Vertical space: subtract safe-areas already on body */
+      height: 100%;
+      padding: 10px 14px 6px;   /* compact top/bottom for tall iPhone 16 notch area */
+      gap: 10px;
+      justify-content: space-between; /* header / tubes / controls evenly spaced */
+    }
+
+    /* ═══════════════════════════════════════
+       Header
+    ═══════════════════════════════════════ */
+    #header { text-align: center; flex-shrink: 0; }
+    #header h1 {
+      font-size: clamp(.95rem, 4.2vw, 1.3rem);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, #c7d2fe, #818cf8, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 4px;
+    }
+    #level-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 14px;
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      border-radius: 999px;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      font-size: clamp(.72rem, 2.4vw, .88rem);
+      font-weight: 600;
+      color: var(--text2);
+    }
+    #level-badge span { color: #a5b4fc; font-weight: 700; }
+
+    #hidden-badge {
+      display: none;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 10px;
+      background: rgba(234,179,8,0.1);
+      border: 1px solid rgba(234,179,8,0.3);
+      border-radius: 999px;
+      font-size: clamp(.65rem, 1.9vw, .75rem);
+      font-weight: 600;
+      color: #fde047;
+      margin-top: 3px;
+    }
+    #hidden-badge.active { display: inline-flex; }
+
+    /* ═══════════════════════════════════════
+       Tubes container
+       — takes all remaining vertical space
+    ═══════════════════════════════════════ */
+    #tubes-container {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: flex-end;
+      gap: var(--gap, 10px);
+      padding: 8px 4px;
+      flex: 1;
+      align-content: center;
+      width: 100%;
+      overflow: hidden;   /* no scroll — everything must fit */
+      min-height: 0;
+    }
+
+    /* ═══════════════════════════════════════
+       Tube element
+    ═══════════════════════════════════════ */
+    .tube {
+      width: var(--tube-width, 52px);
+      height: var(--tube-height, 160px);
+      position: relative;
+      cursor: pointer;
+      transition: transform 0.38s var(--ease-bounce);
+      flex-shrink: 0;
+    }
+    .tube.selected { transform: translateY(-14px); }
+
+    .tube-liquids {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column-reverse;
+      pointer-events: none;
+      overflow: hidden;
+    }
+
+    .tube-glass-overlay {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 10;
+    }
+    .glass-bg { fill: var(--glass-bg); }
+    .glass-border {
+      fill: none;
+      stroke: var(--glass-border);
+      stroke-width: 3px;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: stroke .2s, filter .2s;
+    }
+    .glass-highlight {
+      fill: none;
+      stroke: rgba(255,255,255,0.13);
+      stroke-width: 2px;
+      stroke-linecap: round;
+    }
+    .tube:hover .glass-border { stroke: rgba(255,255,255,0.26); }
+    .tube.selected .glass-border {
+      stroke: var(--glass-selected);
+      filter: drop-shadow(0 0 6px rgba(99,102,241,.55));
+    }
+    .tube.completed .glass-border {
+      stroke: rgba(34,197,94,.7);
+      filter: drop-shadow(0 0 6px rgba(34,197,94,.45));
+    }
+
+    /* Shake on invalid move */
+    .tube.shake { animation: shake 0.44s ease; }
+    @keyframes shake {
+      0%,100% { transform: translateX(0); }
+      15% { transform: translateX(-7px) rotate(-1.2deg); }
+      30% { transform: translateX(6px) rotate(1deg); }
+      50% { transform: translateX(-4px) rotate(-.6deg); }
+      70% { transform: translateX(3px) rotate(.4deg); }
+    }
+
+    /* ═══════════════════════════════════════
+       Liquid layers
+    ═══════════════════════════════════════ */
+    .liquid {
+      width: 100%;
+      flex-shrink: 0;
+      height: 25%;
+      position: relative;
+      transition: height .28s var(--ease-out), opacity .2s ease;
+      will-change: height;
+    }
+    .liquid::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(255,255,255,.16) 0%, transparent 36%, rgba(0,0,0,.1) 100%);
+      pointer-events: none;
+    }
+    .liquid.top-layer::before {
+      content: '';
+      position: absolute;
+      top: -4px; left: 2px; right: 2px;
+      height: 8px;
+      background: inherit;
+      border-radius: 50%;
+      filter: brightness(1.1);
+    }
+    .liquid.draining {
+      height: 0 !important;
+      opacity: 0 !important;
+      transition: height .18s ease-in, opacity .16s ease-in !important;
+    }
+
+    /* ── Hidden layer (? mask) ── */
+    .liquid.hidden-layer {
+      background: rgba(30,30,50,0.92) !important;
+      position: relative;
+      overflow: hidden;
+    }
+    .liquid.hidden-layer::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(
+        45deg,
+        rgba(255,255,255,.025) 0px, rgba(255,255,255,.025) 3px,
+        transparent 3px, transparent 9px
+      );
+    }
+    .liquid.hidden-layer .q-mark {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: clamp(10px, 2vw, 14px);
+      font-weight: 800;
+      color: rgba(255,255,255,.38);
+      z-index: 2;
+      line-height: 1;
+    }
+
+    /* Reveal flash */
+    @keyframes revealColor {
+      0%   { filter: brightness(0.2) saturate(0); transform: scaleY(0.8); }
+      45%  { filter: brightness(1.4) saturate(1.6); transform: scaleY(1.06); }
+      100% { filter: brightness(1) saturate(1); transform: scaleY(1); }
+    }
+    .liquid.revealing { animation: revealColor .5s var(--ease-bounce) forwards; }
+
+    /* ═══════════════════════════════════════
+       Stream + splash
+    ═══════════════════════════════════════ */
+    .liquid-stream {
+      position: fixed;
+      z-index: 49;
+      border-radius: 0 0 5px 5px;
+      transform-origin: top center;
+      transform: scaleY(0);
+      pointer-events: none;
+      overflow: hidden;
+      will-change: transform;
+    }
+    .liquid-stream::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(
+        180deg, rgba(255,255,255,.28) 0px, transparent 4px, transparent 9px
+      );
+      animation: streamFlow .28s linear infinite;
+    }
+    @keyframes streamFlow { from { transform: translateY(-9px); } to { transform: translateY(0); } }
+    .liquid-stream::after {
+      content: '';
+      position: absolute;
+      bottom: -5px; left: 50%;
+      transform: translateX(-50%);
+      width: 13px; height: 7px;
+      background: inherit;
+      border-radius: 0 0 50% 50%;
+      opacity: 0.6;
+    }
+    .liquid-stream.ending {
+      opacity: 0 !important;
+      transition: opacity .15s ease-in !important;
+    }
+
+    .liquid-splash {
+      position: absolute;
+      top: -3px; left: 5%; right: 5%;
+      height: 5px;
+      background: inherit;
+      filter: brightness(1.5);
+      border-radius: 50%;
+      animation: splash .38s ease-out forwards;
+      pointer-events: none;
+      z-index: 6;
+    }
+    @keyframes splash {
+      0%   { transform: scaleX(.3) scaleY(1.3); opacity: .9; }
+      40%  { transform: scaleX(1.6) scaleY(.35); opacity: .5; }
+      100% { transform: scaleX(1.1) scaleY(0); opacity: 0; }
+    }
+
+    .tube-placeholder { visibility: hidden; flex-shrink: 0; pointer-events: none; }
+
+    /* ═══════════════════════════════════════
+       Controls bar
+    ═══════════════════════════════════════ */
+    #controls {
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+      justify-content: center;
+      /* Extra bottom padding to clear home indicator */
+      padding-bottom: 4px;
+      width: 100%;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      /* Slightly taller touch target for iPhone (44 px min recommended by HIG) */
+      padding: 10px 18px;
+      min-height: 44px;
+      border: 1px solid var(--glass-border);
+      border-radius: 999px;
+      background: var(--glass-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      color: var(--text2);
+      font-family: var(--font);
+      font-size: clamp(.74rem, 2.2vw, .86rem);
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .18s, color .18s, border-color .18s, transform .18s;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn:hover  { background: rgba(255,255,255,.1); color: var(--text); transform: translateY(-1px); }
+    .btn:active { transform: scale(.95); }
+    .btn.primary {
+      background: linear-gradient(135deg,#6366f1,#8b5cf6);
+      border-color: rgba(139,92,246,.4);
+      color: #fff;
+      box-shadow: 0 4px 20px rgba(99,102,241,.25);
+    }
+    .btn.primary:hover { background: linear-gradient(135deg,#7c7ff7,#a78bfa); }
+    .btn.danger  { border-color: rgba(239,68,68,.3); color: #f87171; }
+    .btn.danger:hover { background: rgba(239,68,68,.12); }
+
+    /* ── Hint button ── */
+    .btn.hint {
+      border-color: rgba(250,204,21,.4);
+      color: #fde047;
+    }
+    .btn.hint:hover { background: rgba(250,204,21,.1); border-color: rgba(250,204,21,.65); color: #fff176; }
+
+    /* ── Hint glow: from-tube (gold) ── */
+    @keyframes hintGlowFrom {
+      0%, 100% { filter: drop-shadow(0 0 0px rgba(250,204,21,0));  transform: translateY(0) scale(1); }
+      40%      { filter: drop-shadow(0 0 14px rgba(250,204,21,.95)) drop-shadow(0 0 28px rgba(250,204,21,.5)); transform: translateY(-6px) scale(1.04); }
+      70%      { filter: drop-shadow(0 0  7px rgba(250,204,21,.6));  transform: translateY(-3px) scale(1.02); }
+    }
+    .tube.hint-from { animation: hintGlowFrom .6s ease-in-out 3 forwards !important; z-index: 8; }
+
+    /* ── Hint glow: to-tube (emerald) ── */
+    @keyframes hintGlowTo {
+      0%, 100% { filter: drop-shadow(0 0 0px rgba(52,211,153,0));   transform: translateY(0) scale(1); }
+      40%      { filter: drop-shadow(0 0 14px rgba(52,211,153,.95)) drop-shadow(0 0 28px rgba(52,211,153,.5)); transform: translateY(-6px) scale(1.04); }
+      70%      { filter: drop-shadow(0 0  7px rgba(52,211,153,.6));  transform: translateY(-3px) scale(1.02); }
+    }
+    .tube.hint-to { animation: hintGlowTo .6s ease-in-out 3 forwards !important; z-index: 8; }
+
+    /* ═══════════════════════════════════════
+       Toast notification
+    ═══════════════════════════════════════ */
+    #toast {
+      position: fixed;
+      /* sit just above the home indicator */
+      bottom: calc(var(--sab) + 74px);
+      left: 50%;
+      transform: translateX(-50%) translateY(14px);
+      background: rgba(12,12,28,.93);
+      border: 1px solid rgba(255,255,255,.16);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: clamp(.78rem, 2.3vw, .9rem);
+      font-weight: 600;
+      padding: 11px 22px;
+      border-radius: 999px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.45);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity .25s ease, transform .28s var(--ease-bounce);
+      white-space: nowrap;
+      max-width: 90vw;
+      text-align: center;
+      z-index: 130;
+    }
+    #toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* ═══════════════════════════════════════
+       Victory modal
+    ═══════════════════════════════════════ */
+    #modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: rgba(0,0,0,.65);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      justify-content: center;
+      align-items: center;
+    }
+    #modal-overlay.active { display: flex; animation: fadeIn .3s ease; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    #modal {
+      background: linear-gradient(145deg,#1e1b4b,#1e293b);
+      border: 1px solid rgba(139,92,246,.3);
+      border-radius: 24px;
+      padding: 32px 38px;
+      text-align: center;
+      box-shadow: 0 24px 80px rgba(99,102,241,.2);
+      animation: modalPop .42s var(--ease-bounce);
+      max-width: 330px;
+      width: 86%;
+    }
+    @keyframes modalPop {
+      0%   { opacity:0; transform: scale(.7) translateY(28px); }
+      100% { opacity:1; transform: scale(1) translateY(0); }
+    }
+    #modal .trophy { font-size: 2.8rem; margin-bottom: 10px; animation: tBounce 1.2s ease infinite; }
+    @keyframes tBounce { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+    #modal h2 { font-size: 1.38rem; font-weight: 800; margin-bottom: 8px; }
+    #modal p  { color: var(--text2); font-size: .88rem; margin-bottom: 22px; }
+
+    /* Confetti */
+    .confetti-particle {
+      position: fixed;
+      pointer-events: none;
+      z-index: 200;
+      animation: confettiFall linear forwards;
+    }
+    @keyframes confettiFall {
+      0%   { opacity:1; transform: translateY(0) rotate(0deg); }
+      100% { opacity:0; transform: translateY(100vh) rotate(720deg); }
+    }
+
+    /* ═══════════════════════════════════════
+       iPhone 16 / small-screen overrides
+       393 × 852 logical px
+    ═══════════════════════════════════════ */
+    @media (max-width: 430px) {
+      #app { padding: 8px 10px 4px; gap: 8px; }
+      #tubes-container { padding: 6px 2px; gap: var(--gap,8px); }
+      #modal { padding: 24px 22px; }
+      .btn { padding: 9px 14px; font-size: .75rem; gap: 5px; }
+    }
+
+    /* Landscape on iPhone 16 — shrink tubes aggressively */
+    @media (max-height: 430px) {
+      #app { padding: 4px 14px 2px; gap: 5px; }
+      #header h1 { font-size: .85rem; }
+      #level-badge { padding: 3px 10px; font-size: .7rem; }
+      #hidden-badge { display: none !important; }
+      #tubes-container { padding: 2px; }
+      #controls { gap: 6px; }
+      .btn { padding: 7px 12px; min-height: 36px; font-size: .72rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Unified bottle clip-path -->
+  <svg width="0" height="0" style="position:absolute;pointer-events:none;">
+    <defs>
+      <clipPath id="clip-bottle" clipPathUnits="objectBoundingBox">
+        <path d="M 0.19,0 L 0.81,0 C 0.81,0.07 0.95,0.15 0.95,0.29 L 0.95,0.83 C 0.95,0.96 0.77,1 0.5,1 C 0.23,1 0.05,0.96 0.05,0.83 L 0.05,0.29 C 0.05,0.15 0.19,0.07 0.19,0 Z" />
+      </clipPath>
+    </defs>
+  </svg>
+
+  <div id="app">
+    <div id="header">
+      <h1>💧 Water Sort Puzzle</h1>
+      <div id="level-badge">Level <span id="level-num">1</span></div>
+      <div id="hidden-badge">👁 히든 컬러 모드</div>
+    </div>
+
+    <div id="tubes-container"></div>
+
+    <div id="controls">
+      <button class="btn"        id="btn-restart">🔄 Restart</button>
+      <button class="btn hint"   id="btn-hint"   >💡 Hint</button>
+      <button class="btn danger" id="btn-reset"  >🗑 Reset All</button>
+    </div>
+  </div>
+
+  <!-- Victory modal -->
+  <div id="modal-overlay">
+    <div id="modal">
+      <div class="trophy">🏆</div>
+      <h2>레벨 클리어!</h2>
+      <p id="modal-msg">축하합니다! 다음 레벨에 도전하세요.</p>
+      <button class="btn primary" id="btn-next-level">▶ 다음 레벨</button>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast"></div>
+
+<script>
+/* ================================================================
+ *  Water Sort Puzzle — Final build
+ *  ✅ Unified bottle design
+ *  ✅ Wave difficulty, 3-8 colours, guaranteed solvable
+ *  ✅ Hidden colour gimmick (? reveal on expose)
+ *  ✅ Smooth pour animations
+ *  ✅ [해결책 B] Shuffle validation — always 1+ visible move at start
+ *  ✅ Unlimited Hint button with gold/emerald glow
+ *  ✅ Per-tube independent animation (no global animating lock)
+ *  ✅ iPhone 16 safe-area / Dynamic Island optimised
+ * ================================================================ */
+
+/* ─────────────────────────────────────────────
+   0a. Sound Engine
+───────────────────────────────────────────── */
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+function playTone(f1, f2, type, vol, dur, delay=0) {
+  try {
+    const ctx = ensureAudio(), t = ctx.currentTime + delay;
+    const osc = ctx.createOscillator(), g = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(f1, t);
+    if (f2 !== f1) osc.frequency.exponentialRampToValueAtTime(f2, t + dur * .8);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    osc.connect(g).connect(ctx.destination);
+    osc.start(t); osc.stop(t + dur);
+  } catch(e) {}
+}
+const sfxSelect   = () => playTone(1200, 820,  'sine',     .16, .12);
+const sfxDeselect = () => playTone(820,  500,  'sine',     .11, .10);
+const sfxError    = () => playTone(220,  185,  'square',   .10, .20);
+const sfxPlace    = () => playTone(600,  210,  'triangle', .10, .10);
+const sfxDrip     = () => playTone(1800 + Math.random()*400, 400, 'sine', .12, .18);
+const sfxReveal   = () => { playTone(880,1320,'sine',.14,.25); playTone(1320,1760,'sine',.10,.22,.14); };
+function sfxPour(duration=.8) {
+  try {
+    const ctx = ensureAudio(), t = ctx.currentTime;
+    const n = Math.floor(duration / .065);
+    for (let i=0; i<n; i++) {
+      const bt = t + i*.065 + Math.random()*.018;
+      const f0 = 850 + Math.random()*350;
+      const osc = ctx.createOscillator(), g = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(f0, bt);
+      osc.frequency.exponentialRampToValueAtTime(f0+400+Math.random()*300, bt+.05);
+      g.gain.setValueAtTime(0, bt);
+      g.gain.linearRampToValueAtTime(.09, bt+.01);
+      g.gain.exponentialRampToValueAtTime(.001, bt+.05);
+      osc.connect(g).connect(ctx.destination);
+      osc.start(bt); osc.stop(bt+.06);
+    }
+  } catch(e) {}
+}
+function sfxVictory() {
+  [523,659,784,1047].forEach((f,i) => {
+    try {
+      const ctx = ensureAudio(), t = ctx.currentTime + i*.12;
+      const osc = ctx.createOscillator(), g = ctx.createGain();
+      osc.type = 'sine'; osc.frequency.setValueAtTime(f, t);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(.15, t+.03);
+      g.gain.setValueAtTime(.15, t+.2);
+      g.gain.exponentialRampToValueAtTime(.001, t+.6);
+      osc.connect(g).connect(ctx.destination);
+      osc.start(t); osc.stop(t+.6);
+    } catch(e) {}
+  });
+}
+
+/* ─────────────────────────────────────────────
+   0b. Colour palette — 8 max-contrast colours
+───────────────────────────────────────────── */
+const COLORS = [
+  { bg:'linear-gradient(180deg,#ff2e2e,#bb0000)', solid:'#ff2e2e' }, // Red
+  { bg:'linear-gradient(180deg,#1e7fff,#004acc)', solid:'#1e7fff' }, // Blue
+  { bg:'linear-gradient(180deg,#ffe100,#d49800)', solid:'#ffe100' }, // Yellow
+  { bg:'linear-gradient(180deg,#00d44a,#007828)', solid:'#00d44a' }, // Green
+  { bg:'linear-gradient(180deg,#ff7600,#c24800)', solid:'#ff7600' }, // Orange
+  { bg:'linear-gradient(180deg,#b030ff,#6800cc)', solid:'#b030ff' }, // Purple
+  { bg:'linear-gradient(180deg,#00d0ff,#0075cc)', solid:'#00d0ff' }, // Cyan
+  { bg:'linear-gradient(180deg,#ff3daa,#c2006c)', solid:'#ff3daa' }, // Pink
+];
+
+const LAYERS           = 4;
+const MAX_COLORS       = 8;
+const HIDDEN_FROM_LEVEL = 6;
+
+/* ─────────────────────────────────────────────
+   0c. SVG bottle geometry
+───────────────────────────────────────────── */
+const BOTTLE = {
+  bg:     'M 20,0 L 80,0 C 80,18 96,42 96,84 L 96,246 C 96,285 78,300 50,300 C 22,300 4,285 4,246 L 4,84 C 4,42 20,18 20,0 Z',
+  border: 'M 20,0 C 20,18 4,42 4,84 L 4,246 C 4,285 22,300 50,300 C 78,300 96,285 96,246 L 96,84 C 96,42 80,18 80,0',
+  hl:     'M 26,10 C 26,24 14,44 14,80 L 14,240 C 14,268 24,284 36,292',
+};
+
+/* ─────────────────────────────────────────────
+   1. State — per-tube locking (no global flag)
+───────────────────────────────────────────── */
+const state = {
+  level:        1,
+  tubes:        [],
+  initialTubes: [],
+  hiddenMap:    [],
+  initialHidden:[],
+  selectedIndex: null,
+  pouringTubes: new Set(), // indices of tubes currently mid-animation
+};
+
+/* ─────────────────────────────────────────────
+   2. Level config — wave difficulty
+───────────────────────────────────────────── */
+function getLevelConfig(level) {
+  const base = Math.min(3 + Math.floor((level-1) / 4), MAX_COLORS);
+  const wave = Math.round(Math.sin((level-1) * 0.85) * 0.9);
+  const numColors = Math.max(3, Math.min(MAX_COLORS, base + wave));
+  const emptyTubes = numColors >= 6 ? 3 : 2;
+  return { numColors, emptyTubes };
+}
+
+/* ─────────────────────────────────────────────
+   3. [해결책 B] Shuffle + validation
+      Ensures ≥1 valid move exists among visible
+      top colours before the player touches anything.
+───────────────────────────────────────────── */
+function hasVisibleValidMove(tubes) {
+  for (let f = 0; f < tubes.length; f++) {
+    if (!tubes[f].length) continue;
+    for (let t = 0; t < tubes.length; t++) {
+      if (f === t) continue;
+      if (canPour(tubes[f], tubes[t])) return true;
+    }
+  }
+  return false;
+}
+
+function generateLevel(level) {
+  const { numColors, emptyTubes } = getLevelConfig(level);
+  const MAX_ATTEMPTS = 40;
+
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    // Start from solved state
+    const tubes = [];
+    for (let c = 0; c < numColors; c++) tubes.push([c, c, c, c]);
+    for (let e = 0; e < emptyTubes; e++) tubes.push([]);
+
+    // Wave-modulated shuffle strength
+    const base  = numColors * LAYERS * 3;
+    const extra = Math.min((level + Math.round(Math.sin(level * .7) * 4)) * 5, 260);
+    const total = base + extra;
+
+    let lastFrom = -1, lastTo = -1;
+    for (let m = 0; m < total; m++) {
+      const moves = [];
+      for (let f = 0; f < tubes.length; f++) {
+        if (!tubes[f].length) continue;
+        for (let t = 0; t < tubes.length; t++) {
+          if (f === t || tubes[t].length >= LAYERS) continue;
+          if (f === lastTo && t === lastFrom) continue;
+          moves.push({ f, t });
+        }
+      }
+      if (!moves.length) break;
+      const mv = moves[Math.floor(Math.random() * moves.length)];
+      tubes[mv.t].push(tubes[mv.f].pop());
+      lastFrom = mv.f; lastTo = mv.t;
+    }
+
+    // Fisher-Yates tube order shuffle
+    for (let i = tubes.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [tubes[i], tubes[j]] = [tubes[j], tubes[i]];
+    }
+
+    // [해결책 B] Validate: must have ≥1 playable move on opening board
+    if (hasVisibleValidMove(tubes)) return tubes;
+  }
+
+  // Fallback (extremely rare): return a trivially solved layout
+  const fallback = [];
+  for (let c = 0; c < getLevelConfig(level).numColors; c++) fallback.push([c, c, c, c]);
+  for (let e = 0; e < getLevelConfig(level).emptyTubes; e++) fallback.push([]);
+  return fallback;
+}
+
+/* ─────────────────────────────────────────────
+   4. Hidden colour map
+───────────────────────────────────────────── */
+function getHiddenDepth(level) {
+  if (level < HIDDEN_FROM_LEVEL) return 0;
+  if (level < 10) return 1;
+  if (level < 15) return 2;
+  return 3;
+}
+function buildHiddenMap(tubes, level) {
+  const depth = getHiddenDepth(level);
+  return tubes.map(tube => {
+    if (!tube.length || !depth) return tube.map(() => false);
+    return tube.map((_, i) => {
+      if (i === tube.length - 1) return false; // top always visible
+      return i < depth;
+    });
+  });
+}
+
+function cloneTubes(t)  { return t.map(a => [...a]); }
+function cloneHM(hm)    { return hm.map(a => [...a]); }
+
+/* ─────────────────────────────────────────────
+   5. Game logic
+───────────────────────────────────────────── */
+function getTopGroup(tube) {
+  if (!tube.length) return { color: -1, count: 0 };
+  const top = tube[tube.length - 1];
+  let n = 0;
+  for (let i = tube.length - 1; i >= 0; i--) { if (tube[i] === top) n++; else break; }
+  return { color: top, count: n };
+}
+function canPour(from, to) {
+  if (!from.length || from === to) return false;
+  const space = LAYERS - to.length;
+  if (space <= 0) return false;
+  if (!to.length) return true;
+  return to[to.length - 1] === from[from.length - 1];
+}
+function executePour(from, to) {
+  if (!canPour(from, to)) return 0;
+  const { color, count } = getTopGroup(from);
+  const n = Math.min(count, LAYERS - to.length);
+  for (let i = 0; i < n; i++) { from.pop(); to.push(color); }
+  return n;
+}
+function checkWin(tubes) {
+  return tubes.every(t => !t.length || (t.length === LAYERS && t.every(c => c === t[0])));
+}
+function isTubeComplete(tube) {
+  return tube.length === LAYERS && tube.every(c => c === tube[0]);
+}
+function syncHiddenMap(idx) {
+  const tube = state.tubes[idx];
+  if (!state.hiddenMap[idx]) return;
+  while (state.hiddenMap[idx].length > tube.length) state.hiddenMap[idx].pop();
+  while (state.hiddenMap[idx].length < tube.length) state.hiddenMap[idx].push(false);
+  if (tube.length > 0) state.hiddenMap[idx][tube.length - 1] = false;
+}
+function revealNewTop(idx) {
+  const tube = state.tubes[idx];
+  if (!tube.length) return false;
+  const top = tube.length - 1;
+  if (state.hiddenMap[idx]?.[top]) { state.hiddenMap[idx][top] = false; return true; }
+  return false;
+}
+
+/* ─────────────────────────────────────────────
+   6. DOM references
+───────────────────────────────────────────── */
+const $tubes       = document.getElementById('tubes-container');
+const $levelNum    = document.getElementById('level-num');
+const $modal       = document.getElementById('modal-overlay');
+const $modalMsg    = document.getElementById('modal-msg');
+const $hiddenBadge = document.getElementById('hidden-badge');
+const $toast       = document.getElementById('toast');
+
+/* ─────────────────────────────────────────────
+   6a. Toast helper
+───────────────────────────────────────────── */
+let _toastTid = null;
+function showToast(msg, ms = 2800) {
+  $toast.textContent = msg;
+  $toast.classList.add('show');
+  clearTimeout(_toastTid);
+  _toastTid = setTimeout(() => $toast.classList.remove('show'), ms);
+}
+
+/* ─────────────────────────────────────────────
+   7. Responsive sizing
+      iPhone 16: 393 wide, 852 tall
+      Tube area ≈ 852 - header(~60) - controls(~52) - safe-areas(~94)
+                ≈ 646px usable height
+───────────────────────────────────────────── */
+function adjustTubeSizes() {
+  const n    = state.tubes.length;
+  const vw   = window.innerWidth;
+  const vh   = window.innerHeight;
+  const mob  = vw < 440;
+  const tall = vh > 750; // iPhone 16+ portrait
+
+  let w, h, gap;
+
+  if (mob) {
+    // Available horizontal space per tube (2 rows max)
+    // Row capacity: Math.ceil(n/2) tubes if 2 rows needed
+    const rows  = n > 6 ? 2 : 1;
+    const cols  = Math.ceil(n / rows);
+    const maxW  = Math.floor((vw - 20) / cols) - 10; // subtract gaps
+    // Available vertical: vh minus header, controls, safe-areas, padding
+    const availH = vh - 170;
+    const maxH   = Math.floor(availH / rows) - 12;
+
+    // Clamp to aesthetic limits
+    w   = Math.min(maxW, tall ? 54 : 48) + 'px';
+    h   = Math.min(maxH, tall ? 168 : 148) + 'px';
+    gap = n <= 6 ? '10px' : '7px';
+
+    if (n <= 5)       { w = Math.min(maxW, 58) + 'px'; h = Math.min(maxH, tall ? 178 : 158) + 'px'; gap = '12px'; }
+    else if (n <= 7)  { w = Math.min(maxW, 52) + 'px'; h = Math.min(maxH, tall ? 162 : 144) + 'px'; gap = '9px';  }
+    else if (n <= 9)  { w = Math.min(maxW, 44) + 'px'; h = Math.min(maxH, tall ? 146 : 130) + 'px'; gap = '7px';  }
+    else              { w = Math.min(maxW, 38) + 'px'; h = Math.min(maxH, tall ? 128 : 114) + 'px'; gap = '5px';  }
+  } else {
+    if      (n <= 8)  { w = '62px'; h = '205px'; gap = '14px'; }
+    else if (n <= 11) { w = '52px'; h = '172px'; gap = '11px'; }
+    else              { w = '44px'; h = '148px'; gap = '9px';  }
+  }
+
+  $tubes.style.setProperty('--tube-width',  w);
+  $tubes.style.setProperty('--tube-height', h);
+  $tubes.style.setProperty('--gap',         gap);
+}
+
+/* ─────────────────────────────────────────────
+   8. Renderer
+───────────────────────────────────────────── */
+function renderTubes() {
+  adjustTubeSizes();
+  $tubes.innerHTML = '';
+  $hiddenBadge.classList.toggle('active', getHiddenDepth(state.level) > 0);
+
+  state.tubes.forEach((tube, idx) => {
+    const el = document.createElement('div');
+    el.classList.add('tube');
+    el.id = `tube-${idx}`;
+    el.dataset.index = idx;
+    if (state.selectedIndex === idx)  el.classList.add('selected');
+    if (isTubeComplete(tube))          el.classList.add('completed');
+
+    // Liquid clip wrapper
+    const liqEl = document.createElement('div');
+    liqEl.classList.add('tube-liquids');
+    liqEl.style.clipPath = 'url(#clip-bottle)';
+    liqEl.style.webkitClipPath = 'url(#clip-bottle)';
+
+    // Build colour blocks
+    const blocks = [];
+    if (tube.length) {
+      let cur = { color: tube[0], count: 1, startIdx: 0 };
+      for (let i = 1; i < tube.length; i++) {
+        if (tube[i] === cur.color) cur.count++;
+        else { blocks.push(cur); cur = { color: tube[i], count: 1, startIdx: i }; }
+      }
+      blocks.push(cur);
+    }
+
+    blocks.forEach((b, bi) => {
+      const liq = document.createElement('div');
+      liq.classList.add('liquid');
+      liq.dataset.color = b.color;
+      liq.dataset.count = b.count;
+      liq.style.height  = `${b.count * 25}%`;
+      if (bi === blocks.length - 1) liq.classList.add('top-layer');
+
+      const isHidden = !!(state.hiddenMap[idx]?.[b.startIdx]);
+      if (isHidden) {
+        liq.classList.add('hidden-layer');
+        for (let q = 0; q < b.count; q++) {
+          const s = document.createElement('span');
+          s.className = 'q-mark'; s.textContent = '?';
+          liq.appendChild(s);
+        }
+      } else {
+        liq.style.background = COLORS[b.color].bg;
+      }
+      liqEl.appendChild(liq);
+    });
+    el.appendChild(liqEl);
+
+    // SVG glass overlay
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'tube-glass-overlay');
+    svg.setAttribute('viewBox', '0 0 100 300');
+    svg.setAttribute('preserveAspectRatio', 'none');
+    [['glass-bg', BOTTLE.bg], ['glass-highlight', BOTTLE.hl], ['glass-border', BOTTLE.border]].forEach(([cls, d]) => {
+      const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      p.setAttribute('class', cls); p.setAttribute('d', d);
+      svg.appendChild(p);
+    });
+    el.appendChild(svg);
+
+    el.addEventListener('click',    () => onTubeClick(idx));
+    el.addEventListener('touchend', e  => { e.preventDefault(); onTubeClick(idx); }, { passive: false });
+    $tubes.appendChild(el);
+  });
+}
+
+function shakeTube(idx) {
+  const el = document.getElementById(`tube-${idx}`);
+  if (!el) return;
+  el.classList.remove('shake');
+  void el.offsetWidth;
+  el.classList.add('shake');
+  el.addEventListener('animationend', () => el.classList.remove('shake'), { once: true });
+}
+function doRevealAnim(idx) {
+  const el = document.getElementById(`tube-${idx}`);
+  if (!el) return;
+  const top = el.querySelector('.liquid.top-layer');
+  if (top && !top.classList.contains('hidden-layer')) {
+    top.classList.add('revealing');
+    top.addEventListener('animationend', () => top.classList.remove('revealing'), { once: true });
+    sfxReveal();
+  }
+}
+
+/* ─────────────────────────────────────────────
+   9. Hint — unlimited, no ? pre-reveal
+───────────────────────────────────────────── */
+let _hintTid = null;
+function doHint() {
+  // Find first valid move skipping tubes currently animating
+  let found = null;
+  outer: for (let f = 0; f < state.tubes.length; f++) {
+    if (state.pouringTubes.has(f)) continue;
+    if (!state.tubes[f].length || isTubeComplete(state.tubes[f])) continue;
+    for (let t = 0; t < state.tubes.length; t++) {
+      if (f === t || state.pouringTubes.has(t)) continue;
+      if (canPour(state.tubes[f], state.tubes[t])) { found = { f, t }; break outer; }
+    }
+  }
+
+  if (!found) {
+    showToast('🚫 더 이상 움직일 수 없어요! Restart를 눌러보세요.');
+    return;
+  }
+
+  // Clear previous hint classes immediately
+  clearTimeout(_hintTid);
+  document.querySelectorAll('.tube.hint-from, .tube.hint-to').forEach(el => {
+    el.classList.remove('hint-from', 'hint-to');
+  });
+
+  const fromEl = document.getElementById(`tube-${found.f}`);
+  const toEl   = document.getElementById(`tube-${found.t}`);
+  if (fromEl) { void fromEl.offsetWidth; fromEl.classList.add('hint-from'); }
+  if (toEl)   { void toEl.offsetWidth;   toEl.classList.add('hint-to');   }
+
+  // 3 pulses × 0.6 s = 1.8 s + 100 ms buffer
+  _hintTid = setTimeout(() => {
+    fromEl?.classList.remove('hint-from');
+    toEl?.classList.remove('hint-to');
+  }, 1900);
+}
+
+/* ─────────────────────────────────────────────
+   10. Pour animation — per-tube independent lock
+───────────────────────────────────────────── */
+const wait = ms => new Promise(r => setTimeout(r, ms));
+function setTrans(el, v) { el.style.transition = 'none'; void el.offsetWidth; el.style.transition = v; }
+
+function makeStream(x, y, endY, colorIdx) {
+  const el = document.createElement('div');
+  el.classList.add('liquid-stream');
+  const h = Math.max(endY - y, 10);
+  Object.assign(el.style, {
+    left:      `${x - 4.5}px`,
+    top:       `${y}px`,
+    width:     '9px',
+    height:    `${h}px`,
+    background: COLORS[colorIdx].solid,
+    opacity:   '0.9',
+    boxShadow: `0 0 10px ${COLORS[colorIdx].solid}55`,
+  });
+  return el;
+}
+
+async function pourAnim(fromIdx, toIdx, moveCount, colorIdx) {
+  // Lock both tubes
+  state.pouringTubes.add(fromIdx);
+  state.pouringTubes.add(toIdx);
+
+  const fromEl = document.getElementById(`tube-${fromIdx}`);
+  const toEl   = document.getElementById(`tube-${toIdx}`);
+  if (!fromEl || !toEl) {
+    state.pouringTubes.delete(fromIdx);
+    state.pouringTubes.delete(toIdx);
+    return;
+  }
+
+  const fr = fromEl.getBoundingClientRect();
+  const tr = toEl.getBoundingClientRect();
+  const W = fr.width, H = fr.height;
+  const dir = ((tr.left + tr.width/2) - (fr.left + fr.width/2)) >= 0 ? 1 : -1;
+  const deg = 62, theta = deg * Math.PI / 180;
+  const cosT = Math.cos(theta), sinT = Math.sin(theta);
+  let prX, prY;
+  if (dir > 0) { prX = W/2*(1+cosT) + H*sinT;  prY = H*(1-cosT) + W/2*sinT; }
+  else          { prX = W/2*(1-cosT) - H*sinT;  prY = H*(1-cosT) + W/2*sinT; }
+  const mvX   = (tr.left + tr.width/2) - fr.left - prX;
+  const mvY   = tr.top - 48 - fr.top - prY;
+  const liftY = Math.min(mvY * .45, -48);
+
+  // Placeholder keeps layout stable while fromEl is fixed
+  const ph = document.createElement('div');
+  ph.className = 'tube-placeholder';
+  ph.style.width  = `${W}px`;
+  ph.style.height = `${H}px`;
+  fromEl.parentNode.insertBefore(ph, fromEl);
+  const trU = toEl.getBoundingClientRect();
+
+  fromEl.classList.remove('selected', 'hint-from', 'hint-to');
+  Object.assign(fromEl.style, {
+    position: 'fixed', left: `${fr.left}px`, top: `${fr.top}px`,
+    width: `${W}px`, height: `${H}px`, zIndex: '50',
+    margin: '0', pointerEvents: 'none',
+  });
+
+  // Ph1: Lift
+  fromEl.style.transformOrigin = 'center bottom';
+  setTrans(fromEl, 'transform 0.24s var(--ease-out)');
+  fromEl.style.transform = `translateY(${liftY}px)`;
+  sfxSelect();
+  await wait(255);
+
+  // Ph2: Move + Tilt
+  setTrans(fromEl, 'transform 0.34s var(--ease-out)');
+  fromEl.style.transform = `translateX(${mvX}px) translateY(${mvY}px) rotate(${dir * deg}deg)`;
+  await wait(360);
+
+  // Ph3: Stream + layer-by-layer transfer
+  const psx    = fr.left + mvX + prX;
+  const psy    = fr.top  + mvY + prY;
+  const stream = makeStream(psx, psy, trU.top + 3, colorIdx);
+  document.body.appendChild(stream);
+  sfxPour(.28 + moveCount * .22);
+  requestAnimationFrame(() => {
+    stream.style.transition = 'transform 0.2s ease-out';
+    stream.style.transform  = 'scaleY(1)';
+  });
+  await wait(225);
+
+  for (let i = 0; i < moveCount; i++) {
+    // Drain source
+    const fLiqs = fromEl.querySelectorAll('.liquid');
+    if (fLiqs.length) {
+      const top = fLiqs[fLiqs.length - 1];
+      const cnt = parseInt(top.dataset.count, 10) || 1;
+      if (cnt > 1) {
+        top.dataset.count = cnt - 1;
+        top.style.transition = 'height 0.2s ease-in-out';
+        top.style.height = `${(cnt - 1) * 25}%`;
+      } else {
+        top.classList.remove('top-layer'); top.classList.add('draining');
+        if (fLiqs.length > 1) fLiqs[fLiqs.length - 2].classList.add('top-layer');
+      }
+    }
+    // Fill destination
+    const exTop = toEl.querySelector('.liquid.top-layer');
+    if (exTop && parseInt(exTop.dataset.color, 10) === colorIdx && !exTop.classList.contains('hidden-layer')) {
+      const cnt = parseInt(exTop.dataset.count, 10) || 1, nc = cnt + 1;
+      exTop.dataset.count = nc;
+      const sp = document.createElement('div'); sp.className = 'liquid-splash'; exTop.appendChild(sp);
+      setTimeout(() => sp.remove(), 400);
+      sfxDrip();
+      requestAnimationFrame(() => {
+        exTop.style.transition = 'height 0.22s cubic-bezier(.34,1.2,.64,1)';
+        exTop.style.height = `${nc * 25}%`;
+      });
+    } else {
+      if (exTop) exTop.classList.remove('top-layer');
+      const nl = document.createElement('div');
+      nl.classList.add('liquid', 'top-layer');
+      nl.dataset.color = colorIdx; nl.dataset.count = 1;
+      nl.style.background = COLORS[colorIdx].bg;
+      nl.style.height = '0%'; nl.style.opacity = '0';
+      (toEl.querySelector('.tube-liquids') || toEl).appendChild(nl);
+      const sp = document.createElement('div'); sp.className = 'liquid-splash'; nl.appendChild(sp);
+      setTimeout(() => sp.remove(), 400);
+      sfxDrip();
+      requestAnimationFrame(() => {
+        nl.style.transition = 'height 0.22s cubic-bezier(.34,1.2,.64,1),opacity 0.15s ease-out';
+        nl.style.height = '25%'; nl.style.opacity = '1';
+      });
+    }
+    await wait(185);
+    const dr = fromEl.querySelector('.liquid.draining');
+    if (dr) dr.remove();
+  }
+
+  // Ph4: End stream + un-tilt
+  stream.classList.add('ending');
+  await wait(170);
+  stream.remove();
+  setTrans(fromEl, 'transform 0.26s var(--ease-out)');
+  fromEl.style.transform = `translateX(${mvX}px) translateY(${liftY}px) rotate(0deg)`;
+  await wait(275);
+
+  // Ph5: Return to original position
+  setTrans(fromEl, 'transform 0.26s var(--ease-out)');
+  fromEl.style.transform = 'translateX(0) translateY(0)';
+  sfxPlace();
+  await wait(275);
+
+  ph.remove();
+
+  // State update
+  executePour(state.tubes[fromIdx], state.tubes[toIdx]);
+  syncHiddenMap(fromIdx);
+  syncHiddenMap(toIdx);
+  const rev1 = revealNewTop(fromIdx);
+  const rev2 = revealNewTop(toIdx);
+
+  // Unlock tubes
+  state.pouringTubes.delete(fromIdx);
+  state.pouringTubes.delete(toIdx);
+
+  renderTubes();
+  if (rev1) doRevealAnim(fromIdx);
+  if (rev2) doRevealAnim(toIdx);
+
+  if (checkWin(state.tubes)) setTimeout(() => showVictory(), 380);
+}
+
+/* ─────────────────────────────────────────────
+   11. Input handler — per-tube gate, not global
+───────────────────────────────────────────── */
+function onTubeClick(idx) {
+  // Ignore taps on tubes that are mid-animation
+  if (state.pouringTubes.has(idx)) return;
+
+  if (state.selectedIndex === null) {
+    if (!state.tubes[idx].length || isTubeComplete(state.tubes[idx])) return;
+    state.selectedIndex = idx;
+    sfxSelect();
+    renderTubes();
+    return;
+  }
+
+  if (state.selectedIndex === idx) {
+    state.selectedIndex = null;
+    sfxDeselect();
+    renderTubes();
+    return;
+  }
+
+  const from = state.selectedIndex, to = idx;
+
+  // Also guard the from-tube — it might have started animating since selection
+  if (state.pouringTubes.has(from) || state.pouringTubes.has(to)) return;
+
+  if (canPour(state.tubes[from], state.tubes[to])) {
+    const { color, count } = getTopGroup(state.tubes[from]);
+    const n = Math.min(count, LAYERS - state.tubes[to].length);
+    state.selectedIndex = null;
+    // Remove any lingering hint glow
+    document.getElementById(`tube-${from}`)?.classList.remove('hint-from', 'hint-to');
+    document.getElementById(`tube-${to}`)?.classList.remove('hint-from', 'hint-to');
+    pourAnim(from, to, n, color);
+  } else {
+    sfxError();
+    shakeTube(to);
+    if (state.tubes[to].length && !isTubeComplete(state.tubes[to])) {
+      state.selectedIndex = to;
+      renderTubes();
+    } else {
+      state.selectedIndex = null;
+      renderTubes();
+    }
+  }
+}
+
+/* ─────────────────────────────────────────────
+   12. Victory
+───────────────────────────────────────────── */
+function showVictory() {
+  $modalMsg.textContent = `레벨 ${state.level} 클리어! 🎉 다음 레벨에 도전하세요.`;
+  $modal.classList.add('active');
+  sfxVictory();
+  spawnConfetti();
+}
+function hideVictory() { $modal.classList.remove('active'); }
+
+function spawnConfetti() {
+  const cols = ['#ff2e2e','#1e7fff','#ffe100','#00d44a','#ff7600','#b030ff','#00d0ff','#ff3daa'];
+  for (let i = 0; i < 60; i++) {
+    const p = document.createElement('div');
+    p.className = 'confetti-particle';
+    p.style.left   = Math.random() * 100 + 'vw';
+    p.style.top    = '-10px';
+    p.style.background = cols[Math.floor(Math.random() * cols.length)];
+    p.style.width  = (4 + Math.random() * 8) + 'px';
+    p.style.height = (4 + Math.random() * 8) + 'px';
+    p.style.animationDuration = (1.5 + Math.random() * 2) + 's';
+    p.style.animationDelay   = (Math.random() * .8) + 's';
+    p.style.borderRadius = Math.random() > .5 ? '50%' : '2px';
+    document.body.appendChild(p);
+    p.addEventListener('animationend', () => p.remove());
+  }
+}
+
+/* ─────────────────────────────────────────────
+   13. Persistence
+───────────────────────────────────────────── */
+const SAVE_KEY = 'wsp_lvl_v4';
+function saveProgress() { try { localStorage.setItem(SAVE_KEY, state.level); } catch(e) {} }
+function loadProgress() {
+  try { const v = parseInt(localStorage.getItem(SAVE_KEY), 10); if (v >= 1) state.level = v; } catch(e) {}
+}
+
+/* ─────────────────────────────────────────────
+   14. Game flow
+───────────────────────────────────────────── */
+function startLevel() {
+  state.tubes         = generateLevel(state.level);
+  state.initialTubes  = cloneTubes(state.tubes);
+  state.hiddenMap     = buildHiddenMap(state.tubes, state.level);
+  state.initialHidden = cloneHM(state.hiddenMap);
+  state.selectedIndex = null;
+  state.pouringTubes.clear();
+  $levelNum.textContent = state.level;
+  renderTubes();
+  saveProgress();
+}
+function restartLevel() {
+  state.tubes        = cloneTubes(state.initialTubes);
+  state.hiddenMap    = cloneHM(state.initialHidden);
+  state.selectedIndex = null;
+  state.pouringTubes.clear();
+  renderTubes();
+}
+function resetAll() {
+  state.level = 1;
+  try { localStorage.removeItem(SAVE_KEY); } catch(e) {}
+  startLevel();
+}
+function nextLevel() { state.level++; hideVictory(); startLevel(); }
+
+/* ─────────────────────────────────────────────
+   15. Event bindings
+───────────────────────────────────────────── */
+document.getElementById('btn-restart').addEventListener('click', restartLevel);
+document.getElementById('btn-hint').addEventListener('click', doHint);
+document.getElementById('btn-reset').addEventListener('click', () => {
+  if (confirm('모든 진행 데이터를 초기화하고 레벨 1부터 다시 시작할까요?')) resetAll();
+});
+document.getElementById('btn-next-level').addEventListener('click', nextLevel);
+
+// iOS touch-end (prevents ghost-click double-fire)
+['btn-restart', 'btn-hint', 'btn-next-level'].forEach(id => {
+  document.getElementById(id).addEventListener('touchend', e => {
+    e.preventDefault();
+    document.getElementById(id).click();
+  }, { passive: false });
+});
+
+window.addEventListener('resize', () => {
+  adjustTubeSizes();
+});
+
+// Block Safari elastic scroll-bounce outside the tube area
+document.body.addEventListener('touchmove', e => {
+  if (!e.target.closest('#tubes-container')) e.preventDefault();
+}, { passive: false });
+
+/* ─────────────────────────────────────────────
+   Boot
+───────────────────────────────────────────── */
+loadProgress();
+startLevel();
+</script>
+</body>
+</html>
