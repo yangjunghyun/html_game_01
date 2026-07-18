@@ -5,6 +5,16 @@
 
 ---
 
+## 스크린샷
+
+<p align="center">
+  <img src="screenshots/watersortpuzzle_screenshot_01.png" width="180">
+  <img src="screenshots/watersortpuzzle_screenshot_02.png" width="180">
+  <img src="screenshots/watersortpuzzle_screenshot_03.png" width="180">
+</p>
+
+---
+
 ## 게임 방법
 
 1. 유리병을 탭해 선택
